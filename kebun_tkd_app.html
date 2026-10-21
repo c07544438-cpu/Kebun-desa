@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KEBUN TKD</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+        
+        /* Custom scrollbar for tables */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="text-gray-800 antialiased h-screen flex flex-col overflow-hidden">
+
+    <!-- App Container -->
+    <div id="app" class="h-full w-full flex flex-col">
+        <!-- Content will be injected here by JS -->
+    </div>
+
+    <script>
+        // Data Store (In-Memory for this session)
+        const state = {
+            currentUser: null, // { username: string, role: 'admin' | 'user' }
+            currentView: 'dashboard',
+            pendapatan: [],
+            pengeluaran: [],
+            pekerja: []
+        };
+
+        // Utility: Format Currency
+        const formatRupiah = (number) => {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(number);
+        };
+
+        // Utility: Format Date
+        const formatDate = (dateString) => {
+            if(!dateString) return '-';
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('id-ID', options);
+        };
+
+        function renderApp() {
+            const app = document.getElementById('app');
+            if (!state.currentUser) {
+                app.innerHTML = getLoginHTML();
+                setupLoginListeners();
+            } else {
+                app.innerHTML = getMainLayoutHTML();
+                renderCurrentView();
+                setupNavigationListeners();
+            }
+        }
+
+        function getLoginHTML() {
+            return `
+                <div class="relative flex items-center justify-center min-h-screen bg-gray-900 w-full overflow-hidden">
+                    <!-- Background Image -->
+                    <div class="absolute inset-0 z-0">
+                        <img src="https://images.unsplash.com/photo-1590682680695-43b964a3ae17?auto=format&fit=crop&q=80" 
+                             alt="Gambar Kebun Sawit" 
+                             class="w-full h-full object-cover opacity-60">
+                        <div class="absolute inset-0 bg-gradient-to-b from-transparent to-green-900 opacity-80"></div>
+                    </div>
+                    
+                    <!-- Login Box -->
+                    <div class="z-10 w-full max-w-md p-8 m-4 glass-panel rounded-2xl shadow-2xl fade-in">
+                        <div class="text-center mb-8">
+                            <div class="inline-flex items-center justify-center w-16 h-16 bg-green-600 rounded-full text-white mb-4 shadow-lg">
+                                <i class="fas fa-tree text-3xl"></i>
+                            </div>
+                            <h1 class="text-3xl font-bold text-green-800 tracking-tight">KEBUN TKD</h1>
+                            <p class="text-sm text-gray-600 mt-2">Sistem Informasi Manajemen Kebun</p>
+                        </div>
+                        
+                        <div id="login-error" class="hidden mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm font-medium text-center"></div>
+
+                        <form id="admin-login-form" class="space-y-5">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Username Admin</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <i class="fas fa-user text-gray-400"></i>
+                                    </div>
+                                    <input type="text" id="username" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all" placeholder="Masukkan Username">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">PIN Rahasia</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <i class="fas fa-lock text-gray-400"></i>
+                                    </div>
+                                    <input type="password" id="pin" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all" placeholder="••••••">
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg shadow transition-colors">
+                                Login Admin
+                            </button>
+                        </form>
+                        
+                        <div class="mt-6 border-t border-gray-200 pt-6">
+                            <button id="btn-user-login" class="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 font-semibold py-2.5 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2">
+                                <i class="fas fa-eye text-green-600"></i>
+                                Mode Pengguna Umum (Read-Only)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function setupLoginListeners() {
+            const form = document.getElementById('admin-login-form');
+            const userBtn = document.getElementById('btn-user-login');
+            const errorDiv = document.getElementById('login-error');
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const user = document.getElementById('username').value.trim();
+                const pin = document.getElementById('pin').value.trim();
+                
+                // Credential check according to requirements
+                if (user.toLowerCase() === 'lirwadi' && pin === 'sjp1997') {
+                    state.currentUser = { username: 'Lirwadi', role: 'admin' };
+                    state.currentView = 'pendapatan'; // Default view changed to pendapatan
+                    renderApp();
+                } else {
+                    errorDiv.textContent = "Username atau PIN salah!";
+                    errorDiv.classList.remove('hidden');
+                }
+            });
+
+            userBtn.addEventListener('click', () => {
+                state.currentUser = { username: 'Pengguna Umum', role: 'user' };
+                state.currentView = 'pendapatan'; // Default view changed to pendapatan
+                renderApp();
+            });
+        }
+
+        function getMainLayoutHTML() {
+            const isAdmin = state.currentUser.role === 'admin';
+            const roleBadge = isAdmin ? 
+                `<span class="bg-green-100 text-green-800 text-[10px] px-2 py-0.5 rounded-full font-bold border border-green-200 uppercase tracking-wider">Admin</span>` : 
+                `<span class="bg-gray-100 text-gray-800 text-[10px] px-2 py-0.5 rounded-full font-bold border border-gray-200 uppercase tracking-wider">User</span>`;
+
+            return `
+                <div class="flex h-screen w-full bg-gray-50 overflow-hidden">
+                    <!-- Mobile Sidebar Overlay -->
+                    <div id="sidebar-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-20 hidden md:hidden transition-opacity"></div>
+
+                    <!-- Sidebar Area (Disamping) -->
+                    <aside id="sidebar" class="fixed inset-y-0 left-0 w-64 bg-white shadow-xl transform -translate-x-full md:translate-x-0 md:static md:flex-shrink-0 flex flex-col z-30 transition-transform duration-300 ease-in-out">
+                        <!-- Sidebar Header -->
+                        <div class="h-16 flex items-center justify-between px-6 border-b border-gray-100 bg-white">
+                            <div class="flex items-center">
+                                <div class="h-8 w-8 bg-green-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-md">
+                                    <i class="fas fa-tree text-sm"></i>
+                                </div>
+                                <span class="font-bold text-lg text-green-800 tracking-tight">KEBUN TKD</span>
+                            </div>
+                            <button id="close-sidebar-btn" class="md:hidden text-gray-400 hover:text-red-500 transition-colors">
+                                <i class="fas fa-times text-xl"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="p-4 flex-1 overflow-y-auto">
+                            <!-- User Profile Info -->
+                            <div class="mb-6 p-3 bg-gray-50 rounded-xl flex items-center gap-3 border border-gray-100 shadow-inner">
+                                <div class="h-10 w-10 rounded-full bg-white border border-gray-200 text-green-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-bold text-gray-900 truncate">${state.currentUser.username}</p>
+                                    <div class="mt-1">${roleBadge}</div>
+                                </div>
+                            </div>
+
+                            <!-- Navigation Menu -->
+                            <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-3">Menu Utama</div>
+                            <nav class="space-y-1.5" id="main-nav">
+                                <!-- Nav items di-inject via JS -->
+                            </nav>
+                        </div>
+
+                        <!-- Logout Area -->
+                        <div class="p-4 border-t border-gray-100 bg-gray-50">
+                            <button id="btn-logout" class="w-full flex items-center justify-center px-4 py-2.5 text-sm font-bold text-red-600 bg-white border border-red-100 hover:bg-red-50 hover:border-red-200 rounded-xl shadow-sm transition-all">
+                                <i class="fas fa-sign-out-alt mr-2"></i> Keluar Akun
+                            </button>
+                        </div>
+                    </aside>
+
+                    <!-- Main Content Panel -->
+                    <div class="flex-1 flex flex-col w-full overflow-hidden relative">
+                        <!-- Mobile Header -->
+                        <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:hidden flex-shrink-0 shadow-sm z-10">
+                            <div class="flex items-center">
+                                <button id="mobile-menu-btn" class="text-gray-600 hover:text-green-700 focus:outline-none p-2 -ml-2 rounded-lg hover:bg-green-50 transition-colors">
+                                    <i class="fas fa-bars text-xl"></i>
+                                </button>
+                                <span class="font-bold text-lg text-green-800 ml-2">KEBUN TKD</span>
+                            </div>
+                            <div class="h-8 w-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-xs uppercase border border-green-200">
+                                ${state.currentUser.username.substring(0,2)}
+                            </div>
+                        </header>
+                        
+                        <!-- Scrollable Workspace -->
+                        <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 w-full bg-[#f8fafc]">
+                            <div class="max-w-7xl mx-auto pb-10" id="view-container">
+                                <!-- Views (Pendapatan/Pengeluaran dll) injected here -->
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getNavItems() {
+            // Urutan disesuaikan dengan permintaan user
+            const items = [
+                { id: 'pendapatan', icon: 'fa-hand-holding-dollar', label: 'Pendapatan' },
+                { id: 'pengeluaran', icon: 'fa-file-invoice-dollar', label: 'Pengeluaran' },
+                { id: 'dashboard', icon: 'fa-chart-pie', label: 'Rekapitulasi' },
+                { id: 'pekerja', icon: 'fa-users', label: 'Data Pekerja' }
+            ];
+            return items;
+        }
+
+        function setupNavigationListeners() {
+            const items = getNavItems();
+            const navContainer = document.getElementById('main-nav');
+            
+            navContainer.innerHTML = items.map(item => `
+                <button data-view="${item.id}" class="nav-btn w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${state.currentView === item.id ? 'bg-green-600 text-white shadow-md shadow-green-200' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}">
+                    <div class="w-8 flex justify-center mr-1">
+                        <i class="fas ${item.icon} ${state.currentView === item.id ? 'text-white' : 'text-gray-400'} text-lg"></i>
+                    </div>
+                    ${item.label}
+                </button>
+            `).join('');
+
+            // Sidebar Toggle Logic for Mobile
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            const menuBtn = document.getElementById('mobile-menu-btn');
+            const closeBtn = document.getElementById('close-sidebar-btn');
+
+            const toggleSidebar = () => {
+                sidebar.classList.toggle('-translate-x-full');
+                overlay.classList.toggle('hidden');
+            };
+
+            if (menuBtn) menuBtn.addEventListener('click', toggleSidebar);
+            if (closeBtn) closeBtn.addEventListener('click', toggleSidebar);
+            if (overlay) overlay.addEventListener('click', toggleSidebar);
+
+            // Listeners for Menu Navigation
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    state.currentView = e.currentTarget.getAttribute('data-view');
+                    
+                    // Re-render layout 
+                    document.getElementById('app').innerHTML = getMainLayoutHTML();
+                    renderCurrentView();
+                    setupNavigationListeners();
+
+                    // Optional: open sidebar if it was open (handled automatically by layout re-render resetting to desktop view, mobile will hide)
+                });
+            });
+
+            // Logout Listener
+            document.getElementById('btn-logout').addEventListener('click', () => {
+                if(confirm('Apakah Anda yakin ingin keluar dari sistem?')) {
+                    state.currentUser = null;
+                    renderApp();
+                }
+            });
+        }
+
+        function renderCurrentView() {
+            const container = document.getElementById('view-container');
+            container.className = "max-w-7xl mx-auto fade-in"; // reset classes and trigger animation
+            
+            switch (state.currentView) {
+                case 'dashboard':
+                    container.innerHTML = getDashboardHTML();
+                    renderChart();
+                    break;
+                case 'pendapatan':
+                    container.innerHTML = getTransaksiHTML('pendapatan');
+                    setupTransaksiListeners('pendapatan');
+                    break;
+                case 'pengeluaran':
+                    container.innerHTML = getTransaksiHTML('pengeluaran');
+                    setupTransaksiListeners('pengeluaran');
+                    break;
+                case 'pekerja':
+                    container.innerHTML = getPekerjaHTML();
+                    setupPekerjaListeners();
+                    break;
+            }
+        }
+
+        function getDashboardHTML() {
+            const totalPendapatan = state.pendapatan.reduce((sum, item) => sum + item.total, 0);
+            const totalPengeluaran = state.pengeluaran.reduce((sum, item) => sum + item.total, 0);
+            const saldoBersih = totalPendapatan - totalPengeluaran;
+            const statusSaldo = saldoBersih >= 0 ? 'Surplus' : 'Defisit';
+            const statusColor = saldoBersih >= 0 ? 'text-green-600' : 'text-red-600';
+            const statusBg = saldoBersih >= 0 ? 'bg-green-100' : 'bg-red-100';
+
+            return `
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Rekapitulasi Kebun</h2>
+                    <button onclick="openExportModal('rekapitulasi')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm shadow flex items-center transition-colors">
+                        <i class="fas fa-file-pdf mr-2"></i> Ekspor PDF
+                    </button>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                        <div class="flex items-center gap-4">
+                            <div class="p-3 bg-green-100 text-green-600 rounded-lg"><i class="fas fa-arrow-down text-xl"></i></div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-500">Total Pendapatan</p>
+                                <p class="text-2xl font-bold text-gray-800">${formatRupiah(totalPendapatan)}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                        <div class="flex items-center gap-4">
+                            <div class="p-3 bg-orange-100 text-orange-600 rounded-lg"><i class="fas fa-arrow-up text-xl"></i></div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-500">Total Pengeluaran</p>
+                                <p class="text-2xl font-bold text-gray-800">${formatRupiah(totalPengeluaran)}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                        <div class="flex items-center gap-4">
+                            <div class="p-3 ${statusBg} ${statusColor} rounded-lg"><i class="fas fa-wallet text-xl"></i></div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-500">Saldo Bersih (${statusSaldo})</p>
+                                <p class="text-2xl font-bold ${statusColor}">${formatRupiah(saldoBersih)}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Area -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Grafik Rasio Keuangan</h3>
+                    <div class="w-full h-80 relative flex justify-center">
+                        <canvas id="financeChart"></canvas>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderChart() {
+            const ctx = document.getElementById('financeChart');
+            if (!ctx) return;
+
+            const totalPendapatan = state.pendapatan.reduce((sum, item) => sum + item.total, 0);
+            const totalPengeluaran = state.pengeluaran.reduce((sum, item) => sum + item.total, 0);
+
+            new Chart(ctx, {
+                type: 'bar', // Using bar chart for better comparative visualization
+                data: {
+                    labels: ['Pendapatan', 'Pengeluaran'],
+                    datasets: [{
+                        label: 'Total (Rp)',
+                        data: [totalPendapatan, totalPengeluaran],
+                        backgroundColor: [
+                            'rgba(34, 197, 94, 0.8)', // Green
+                            'rgba(249, 115, 22, 0.8)'  // Orange
+                        ],
+                        borderColor: [
+                            'rgb(21, 128, 61)',
+                            'rgb(194, 65, 12)'
+                        ],
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return formatRupiah(context.raw);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'Rp ' + (value / 1000000) + 'Jt';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function getTransaksiHTML(type) {
+            const isReadonly = state.currentUser.role === 'user';
+            const title = type === 'pendapatan' ? 'Data Pendapatan' : 'Data Pengeluaran';
+            const themeColor = type === 'pendapatan' ? 'green' : 'orange';
+            const data = state[type];
+
+            return `
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">${title}</h2>
+                        <p class="text-sm text-gray-500">Kelola catatan ${type} operasional kebun.</p>
+                    </div>
+                    <button onclick="openExportModal('${type}')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm shadow flex items-center transition-colors">
+                        <i class="fas fa-file-pdf mr-2"></i> Ekspor PDF
+                    </button>
+                </div>
+
+                <div class="flex flex-col gap-6">
+                    <!-- Form Tambah (Posisi di Atas) -->
+                    <div class="w-full">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 relative overflow-hidden">
+                            ${isReadonly ? `
+                            <div class="absolute inset-0 bg-gray-100/60 backdrop-blur-[1px] z-10 flex flex-col items-center justify-center rounded-xl border border-gray-200">
+                                <i class="fas fa-lock text-3xl text-gray-400 mb-2"></i>
+                                <span class="text-sm font-semibold text-gray-500">Akses Terkunci (Read-Only)</span>
+                            </div>` : ''}
+                            
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2" id="form-title-${type}">Tambah Data Baru</h3>
+                            <form id="form-${type}" class="space-y-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Tanggal</label>
+                                        <input type="date" id="input-date" required class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-${themeColor}-500 focus:border-${themeColor}-500" ${isReadonly ? 'disabled' : ''}>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Nama Barang / Transaksi</label>
+                                        <input type="text" id="input-name" required placeholder="Contoh: Penjualan TBS" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-${themeColor}-500 focus:border-${themeColor}-500" ${isReadonly ? 'disabled' : ''}>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Satuan</label>
+                                        <input type="text" id="input-unit" required placeholder="Ton/Kg/Liter" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-${themeColor}-500 focus:border-${themeColor}-500" ${isReadonly ? 'disabled' : ''}>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Jumlah</label>
+                                        <input type="number" id="input-qty" required min="1" step="0.01" value="1" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-${themeColor}-500 focus:border-${themeColor}-500" ${isReadonly ? 'disabled' : ''}>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Harga Satuan (Rp)</label>
+                                        <input type="number" id="input-price" required min="0" step="100" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-${themeColor}-500 focus:border-${themeColor}-500" ${isReadonly ? 'disabled' : ''}>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Jumlah Total (Auto)</label>
+                                        <input type="text" id="input-total" readonly class="w-full text-sm bg-gray-50 border-gray-300 border rounded-md p-2 font-semibold text-gray-700" value="Rp 0" ${isReadonly ? 'disabled' : ''}>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Dokumentasi Foto</label>
+                                        <input type="file" id="input-photo" accept="image/*" class="w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-${themeColor}-50 file:text-${themeColor}-700 hover:file:bg-${themeColor}-100 border border-gray-200 rounded-md" ${isReadonly ? 'disabled' : ''}>
+                                        <p class="text-[10px] text-gray-400 mt-1 hidden" id="photo-edit-hint">Kosongkan jika tidak ingin mengubah foto</p>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 mt-4 md:w-1/3">
+                                    <button type="submit" id="btn-submit-${type}" class="flex-1 bg-${themeColor}-600 hover:bg-${themeColor}-700 text-white font-medium py-2 rounded-md shadow-sm transition-colors" ${isReadonly ? 'disabled' : ''}>
+                                        <i class="fas fa-save mr-1"></i> Simpan Data
+                                    </button>
+                                    <button type="button" id="btn-cancel-${type}" onclick="cancelEdit('${type}')" class="hidden bg-gray-400 hover:bg-gray-500 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors">
+                                        Batal
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Data Table (Posisi di Bawah) -->
+                    <div class="w-full">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
+                            <div class="overflow-x-auto flex-1">
+                                <table class="min-w-full divide-y divide-gray-200" id="table-${type}">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Barang</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Satuan</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Jumlah</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Harga Satuan</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Foto</th>
+                                            ${!isReadonly ? `<th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>` : ''}
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        ${data.length === 0 ? `<tr><td colspan="${isReadonly?7:8}" class="px-4 py-8 text-center text-gray-500">Tidak ada data.</td></tr>` : ''}
+                                        ${data.map(item => `
+                                            <tr class="hover:bg-gray-50 transition-colors">
+                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${formatDate(item.date)}</td>
+                                                <td class="px-4 py-3 text-sm text-gray-900 font-medium">${item.name}</td>
+                                                <td class="px-4 py-3 text-sm text-gray-500">${item.unit}</td>
+                                                <td class="px-4 py-3 text-sm text-gray-900 text-right">${item.qty}</td>
+                                                <td class="px-4 py-3 text-sm text-gray-500 text-right">${formatRupiah(item.price)}</td>
+                                                <td class="px-4 py-3 text-sm text-gray-900 font-semibold text-right">${formatRupiah(item.total)}</td>
+                                                <td class="px-4 py-3 text-center">
+                                                    ${item.photo ? `<a href="${item.photo}" target="_blank" class="text-blue-500 hover:text-blue-700"><i class="fas fa-image text-lg"></i></a>` : `<span class="text-gray-300"><i class="fas fa-image"></i></span>`}
+                                                </td>
+                                                ${!isReadonly ? `
+                                                <td class="px-4 py-3 whitespace-nowrap text-center text-sm font-medium">
+                                                    <button onclick="editItem('${type}', ${item.id})" class="text-blue-500 hover:text-blue-700 p-1 bg-blue-50 rounded" title="Edit">
+                                                        <i class="fas fa-edit"></i>
+                                                    </button>
+                                                </td>` : ''}
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function setupTransaksiListeners(type) {
+            if (state.currentUser.role === 'user') return; // Read-only
+
+            const qtyInput = document.getElementById('input-qty');
+            const priceInput = document.getElementById('input-price');
+            const totalInput = document.getElementById('input-total');
+            const form = document.getElementById(`form-${type}`);
+            const photoInput = document.getElementById('input-photo');
+
+            // Auto calculate total
+            const calculateTotal = () => {
+                const qty = parseFloat(qtyInput.value) || 0;
+                const price = parseFloat(priceInput.value) || 0;
+                const total = qty * price;
+                totalInput.value = formatRupiah(total);
+            };
+
+            qtyInput.addEventListener('input', calculateTotal);
+            priceInput.addEventListener('input', calculateTotal);
+
+            // Handle Form Submit
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                const date = document.getElementById('input-date').value;
+                const name = document.getElementById('input-name').value;
+                const unit = document.getElementById('input-unit').value;
+                const qty = parseFloat(qtyInput.value);
+                const price = parseFloat(priceInput.value);
+                const total = qty * price;
+                
+                let photoUrl = '';
+                if (photoInput.files && photoInput.files[0]) {
+                    photoUrl = URL.createObjectURL(photoInput.files[0]);
+                }
+
+                const editId = form.dataset.editId;
+
+                if (editId) {
+                    // Update data (Mode Edit)
+                    const index = state[type].findIndex(item => item.id == editId);
+                    if (index !== -1) {
+                        state[type][index].date = date;
+                        state[type][index].name = name;
+                        state[type][index].unit = unit;
+                        state[type][index].qty = qty;
+                        state[type][index].price = price;
+                        state[type][index].total = total;
+                        if (photoUrl) {
+                            state[type][index].photo = photoUrl; // Update foto hanya jika ada yang baru
+                        }
+                    }
+                    delete form.dataset.editId; // Bersihkan mode edit
+                } else {
+                    // Tambah data baru (Mode Normal)
+                    const newItem = {
+                        id: Date.now(),
+                        date, name, unit, qty, price, total, photo: photoUrl
+                    };
+                    state[type].push(newItem);
+                }
+                
+                // Sort by date descending
+                state[type].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                renderCurrentView(); // re-render table
+            });
+        }
+
+        window.editItem = function(type, id) {
+            if (state.currentUser.role === 'user') return;
+            const item = state[type].find(i => i.id === id);
+            if (!item) return;
+
+            // Isi form dengan data yang dipilih
+            document.getElementById('input-date').value = item.date;
+            document.getElementById('input-name').value = item.name;
+            document.getElementById('input-unit').value = item.unit;
+            document.getElementById('input-qty').value = item.qty;
+            document.getElementById('input-price').value = item.price;
+            document.getElementById('input-total').value = formatRupiah(item.total);
+            
+            // Set flag state edit
+            const form = document.getElementById(`form-${type}`);
+            form.dataset.editId = id;
+
+            // Ubah Tampilan UI
+            document.getElementById(`form-title-${type}`).textContent = "Edit Data Transaksi";
+            const btnSubmit = document.getElementById(`btn-submit-${type}`);
+            btnSubmit.innerHTML = '<i class="fas fa-save mr-1"></i> Update Data';
+            btnSubmit.classList.replace('bg-green-600', 'bg-blue-600');
+            btnSubmit.classList.replace('hover:bg-green-700', 'hover:bg-blue-700');
+            btnSubmit.classList.replace('bg-orange-600', 'bg-blue-600');
+            btnSubmit.classList.replace('hover:bg-orange-700', 'hover:bg-blue-700');
+            
+            document.getElementById(`btn-cancel-${type}`).classList.remove('hidden');
+            document.getElementById('photo-edit-hint').classList.remove('hidden');
+            
+            // Scroll otomatis ke form
+            form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        };
+
+        window.cancelEdit = function(type) {
+            const form = document.getElementById(`form-${type}`);
+            delete form.dataset.editId;
+            form.reset();
+            document.getElementById('input-total').value = 'Rp 0';
+            
+            // Kembalikan Tampilan UI
+            document.getElementById(`form-title-${type}`).textContent = "Tambah Data Baru";
+            const btnSubmit = document.getElementById(`btn-submit-${type}`);
+            btnSubmit.innerHTML = '<i class="fas fa-save mr-1"></i> Simpan Data';
+            
+            // Kembalikan warna tombol sesuai tema
+            const themeColor = type === 'pendapatan' ? 'green' : 'orange';
+            btnSubmit.className = `flex-1 bg-${themeColor}-600 hover:bg-${themeColor}-700 text-white font-medium py-2 rounded-md shadow-sm transition-colors`;
+            
+            document.getElementById(`btn-cancel-${type}`).classList.add('hidden');
+            document.getElementById('photo-edit-hint').classList.add('hidden');
+        };
+
+        window.deleteItem = function(type, id) {
+            if (state.currentUser.role === 'user') return;
+            if (confirm('Yakin ingin menghapus data ini?')) {
+                state[type] = state[type].filter(item => item.id !== id);
+                renderCurrentView();
+            }
+        };
+
+        function getPekerjaHTML() {
+            const isReadonly = state.currentUser.role === 'user';
+            const data = state.pekerja;
+
+            return `
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Data Pekerja</h2>
+                        <p class="text-sm text-gray-500">Manajemen tenaga kerja kebun TKD.</p>
+                    </div>
+                    <button onclick="openExportModal('pekerja')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm shadow flex items-center transition-colors">
+                        <i class="fas fa-file-pdf mr-2"></i> Ekspor PDF
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Form Tambah (Locked for Users) -->
+                    <div class="lg:col-span-1">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 relative overflow-hidden">
+                            ${isReadonly ? `
+                            <div class="absolute inset-0 bg-gray-100/60 backdrop-blur-[1px] z-10 flex flex-col items-center justify-center rounded-xl border border-gray-200">
+                                <i class="fas fa-lock text-3xl text-gray-400 mb-2"></i>
+                                <span class="text-sm font-semibold text-gray-500">Akses Terkunci</span>
+                            </div>` : ''}
+                            
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2" id="form-title-pekerja">Tambah Pekerja</h3>
+                            <form id="form-pekerja" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                                    <input type="text" id="pek-name" required class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-blue-500 focus:border-blue-500" ${isReadonly ? 'disabled' : ''}>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Jabatan / Peran</label>
+                                    <input type="text" id="pek-pos" required placeholder="Contoh: Pemanen" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-blue-500 focus:border-blue-500" ${isReadonly ? 'disabled' : ''}>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Kisaran Upah</label>
+                                    <input type="text" id="pek-wage" required placeholder="Contoh: Rp 150.000 / HK" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-blue-500 focus:border-blue-500" ${isReadonly ? 'disabled' : ''}>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Status Keaktifan</label>
+                                    <select id="pek-status" class="w-full text-sm border-gray-300 border rounded-md p-2 focus:ring-blue-500 focus:border-blue-500" ${isReadonly ? 'disabled' : ''}>
+                                        <option value="Aktif">Aktif</option>
+                                        <option value="Cuti">Cuti</option>
+                                        <option value="Berhenti">Berhenti</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Foto KTP (Opsional)</label>
+                                    <input type="file" id="pek-ktp" accept="image/*" class="w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-200 rounded-md" ${isReadonly ? 'disabled' : ''}>
+                                    <p class="text-[10px] text-gray-400 mt-1 hidden" id="ktp-edit-hint">Kosongkan jika tidak ingin mengubah foto</p>
+                                </div>
+                                
+                                <div class="flex gap-2 mt-2">
+                                    <button type="submit" id="btn-submit-pekerja" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-md shadow-sm transition-colors" ${isReadonly ? 'disabled' : ''}>
+                                        <i class="fas fa-save mr-1"></i> Simpan Pekerja
+                                    </button>
+                                    <button type="button" id="btn-cancel-pekerja" onclick="cancelEditWorker()" class="hidden bg-gray-400 hover:bg-gray-500 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors">
+                                        Batal
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Data Table -->
+                    <div class="lg:col-span-2">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
+                            <div class="overflow-x-auto flex-1 p-2">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-2">
+                                    ${data.length === 0 ? `<div class="col-span-full text-center py-8 text-gray-500">Belum ada data pekerja.</div>` : ''}
+                                    ${data.map(item => `
+                                        <div class="border border-gray-200 rounded-lg p-4 bg-gray-50 relative flex items-start gap-4 hover:shadow-md transition-shadow">
+                                            ${!isReadonly ? `
+                                            <div class="absolute top-3 right-3 flex gap-2">
+                                                <button onclick="editWorker(${item.id})" class="text-blue-500 hover:text-white p-1.5 rounded-md hover:bg-blue-600 border border-blue-200 hover:border-blue-600 transition-colors shadow-sm bg-white" title="Edit Data">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <button onclick="deleteWorker(${item.id})" class="text-red-500 hover:text-white p-1.5 rounded-md hover:bg-red-600 border border-red-200 hover:border-red-600 transition-colors shadow-sm bg-white" title="Hapus Permanen">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                </button>
+                                            </div>
+                                            ` : ''}
+                                            <div class="h-12 w-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl flex-shrink-0">
+                                                <i class="fas fa-user"></i>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <h4 class="text-base font-bold text-gray-900 pr-6 truncate">${item.name}</h4>
+                                                <p class="text-sm font-medium text-gray-600 mb-1">${item.position}</p>
+                                                <div class="text-xs text-gray-500 flex flex-col gap-1">
+                                                    <span class="flex items-center gap-1"><i class="fas fa-money-bill-wave w-4"></i> ${item.wage}</span>
+                                                    <span class="flex items-center gap-1">
+                                                        <i class="fas fa-info-circle w-4"></i> 
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${item.status === 'Aktif' ? 'bg-green-100 text-green-700' : (item.status === 'Cuti' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700')}">
+                                                            ${item.status}
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                                <div class="mt-2 pt-2 border-t border-gray-200">
+                                                    ${item.ktpPhoto ? `<a href="${item.ktpPhoto}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800 font-medium inline-flex items-center"><i class="fas fa-id-card mr-1.5"></i>Lihat KTP</a>` : `<span class="text-xs text-gray-400 inline-flex items-center"><i class="fas fa-id-card mr-1.5"></i>Tidak ada KTP</span>`}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function setupPekerjaListeners() {
+            if (state.currentUser.role === 'user') return;
+
+            const form = document.getElementById('form-pekerja');
+            const ktpInput = document.getElementById('pek-ktp');
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                let ktpUrl = '';
+                if (ktpInput.files && ktpInput.files[0]) {
+                    ktpUrl = URL.createObjectURL(ktpInput.files[0]);
+                }
+
+                const editId = form.dataset.editId;
+
+                if (editId) {
+                    // Update data (Mode Edit)
+                    const index = state.pekerja.findIndex(item => item.id == editId);
+                    if (index !== -1) {
+                        state.pekerja[index].name = document.getElementById('pek-name').value;
+                        state.pekerja[index].position = document.getElementById('pek-pos').value;
+                        state.pekerja[index].wage = document.getElementById('pek-wage').value;
+                        state.pekerja[index].status = document.getElementById('pek-status').value;
+                        if (ktpUrl) {
+                            state.pekerja[index].ktpPhoto = ktpUrl; // Update foto KTP hanya jika ada file baru
+                        }
+                    }
+                    delete form.dataset.editId; // Bersihkan status edit
+                } else {
+                    // Tambah data baru (Mode Normal)
+                    const newItem = {
+                        id: Date.now(),
+                        name: document.getElementById('pek-name').value,
+                        position: document.getElementById('pek-pos').value,
+                        wage: document.getElementById('pek-wage').value,
+                        status: document.getElementById('pek-status').value,
+                        ktpPhoto: ktpUrl
+                    };
+                    state.pekerja.push(newItem);
+                }
+                
+                renderCurrentView();
+            });
+        }
+
+        window.editWorker = function(id) {
+            if (state.currentUser.role === 'user') return;
+            const item = state.pekerja.find(i => i.id === id);
+            if (!item) return;
+
+            // Isi form dengan data yang dipilih
+            document.getElementById('pek-name').value = item.name;
+            document.getElementById('pek-pos').value = item.position;
+            document.getElementById('pek-wage').value = item.wage;
+            document.getElementById('pek-status').value = item.status;
+            
+            // Set flag state edit
+            const form = document.getElementById('form-pekerja');
+            form.dataset.editId = id;
+
+            // Ubah Tampilan UI Form
+            document.getElementById('form-title-pekerja').textContent = "Edit Data Pekerja";
+            const btnSubmit = document.getElementById('btn-submit-pekerja');
+            btnSubmit.innerHTML = '<i class="fas fa-save mr-1"></i> Update Data';
+            
+            document.getElementById('btn-cancel-pekerja').classList.remove('hidden');
+            document.getElementById('ktp-edit-hint').classList.remove('hidden');
+            
+            // Scroll otomatis ke form
+            form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        };
+
+        window.cancelEditWorker = function() {
+            const form = document.getElementById('form-pekerja');
+            delete form.dataset.editId;
+            form.reset();
+            
+            // Kembalikan Tampilan UI Form
+            document.getElementById('form-title-pekerja').textContent = "Tambah Pekerja";
+            const btnSubmit = document.getElementById('btn-submit-pekerja');
+            btnSubmit.innerHTML = '<i class="fas fa-save mr-1"></i> Simpan Pekerja';
+            
+            document.getElementById('btn-cancel-pekerja').classList.add('hidden');
+            document.getElementById('ktp-edit-hint').classList.add('hidden');
+        };
+
+        window.deleteWorker = function(id) {
+            if (state.currentUser.role === 'user') return;
+            if (confirm('PERINGATAN: Apakah Anda yakin ingin menghapus data pekerja ini secara PERMANEN? Data yang dihapus tidak dapat dikembalikan.')) {
+                state.pekerja = state.pekerja.filter(item => item.id !== id);
+                renderCurrentView();
+            }
+        };
+
+        let currentExportType = '';
+
+        window.openExportModal = function(type) {
+            currentExportType = type;
+            const titleMap = {
+                'pendapatan': 'Ekspor Data Pendapatan',
+                'pengeluaran': 'Ekspor Data Pengeluaran',
+                'rekapitulasi': 'Ekspor Data Rekapitulasi',
+                'pekerja': 'Ekspor Data Pekerja'
+            };
+
+            const isPekerja = type === 'pekerja';
+
+            const modalHtml = `
+                <div id="export-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 fade-in px-4">
+                    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                        <div class="flex justify-between items-center mb-5 border-b pb-3">
+                            <h3 class="text-lg font-bold text-gray-900" id="export-modal-title">${titleMap[type]}</h3>
+                            <button onclick="closeExportModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i class="fas fa-times text-xl"></i>
+                            </button>
+                        </div>
+                        
+                        ${isPekerja ? `
+                            <p class="text-sm text-gray-500 mb-4">Anda akan mengekspor seluruh daftar data pekerja yang terdaftar di sistem.</p>
+                        ` : `
+                            <p class="text-sm text-gray-500 mb-4">Pilih rentang tanggal data yang ingin diekspor. Kosongkan jika ingin mengekspor seluruh data.</p>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Dari Tanggal</label>
+                                    <input type="date" id="export-start-date" class="w-full border-gray-300 border rounded-lg p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Sampai Tanggal</label>
+                                    <input type="date" id="export-end-date" class="w-full border-gray-300 border rounded-lg p-2.5 text-sm focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                            </div>
+                        `}
+
+                        <div class="mt-6 flex justify-end gap-3 pt-4 border-t">
+                            <button onclick="closeExportModal()" class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors">Batal</button>
+                            <button onclick="executeExport()" class="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium flex items-center transition-colors shadow-sm">
+                                <i class="fas fa-file-pdf mr-2"></i> Ekspor PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            const container = document.createElement('div');
+            container.id = 'export-modal-container';
+            container.innerHTML = modalHtml;
+            document.body.appendChild(container);
+        };
+
+        window.closeExportModal = function() {
+            const container = document.getElementById('export-modal-container');
+            if (container) container.remove();
+        };
+
+        window.executeExport = function() {
+            if (currentExportType === 'pekerja') {
+                exportPekerjaPDF();
+                closeExportModal();
+                return;
+            }
+
+            const startDate = document.getElementById('export-start-date').value;
+            const endDate = document.getElementById('export-end-date').value;
+            
+            if (currentExportType === 'rekapitulasi') {
+                exportRekapPDF(startDate, endDate);
+            } else {
+                exportTablePDF(currentExportType, startDate, endDate);
+            }
+            closeExportModal();
+        };
+
+        const filterDataByDate = (data, startDate, endDate) => {
+            return data.filter(item => {
+                if (!item.date) return true;
+                const itemDate = new Date(item.date);
+                // Set hours to 0 to prevent timezone drift bugs on strict date matching
+                itemDate.setHours(0, 0, 0, 0); 
+                
+                if (startDate) {
+                    const start = new Date(startDate);
+                    start.setHours(0,0,0,0);
+                    if (itemDate < start) return false;
+                }
+                if (endDate) {
+                    const end = new Date(endDate);
+                    end.setHours(23,59,59,999);
+                    if (itemDate > end) return false;
+                }
+                return true;
+            });
+        };
+
+        window.exportTablePDF = function(type, startDate, endDate) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            const title = type === 'pendapatan' ? 'Laporan Pendapatan Kebun TKD' : 'Laporan Pengeluaran Kebun TKD';
+            const filteredData = filterDataByDate(state[type], startDate, endDate);
+            
+            // Header text
+            doc.setFontSize(16);
+            doc.text(title, 14, 15);
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            
+            let periodText = 'Semua Waktu';
+            if (startDate && endDate) periodText = `${formatDate(startDate)} s/d ${formatDate(endDate)}`;
+            else if (startDate) periodText = `Sejak ${formatDate(startDate)}`;
+            else if (endDate) periodText = `Hingga ${formatDate(endDate)}`;
+
+            doc.text(`Periode: ${periodText} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+
+            // Table Structure
+            const columns = [
+                { header: 'No', dataKey: 'no' },
+                { header: 'Tanggal', dataKey: 'date' },
+                { header: 'Nama Barang', dataKey: 'name' },
+                { header: 'Satuan', dataKey: 'unit' },
+                { header: 'Jumlah', dataKey: 'qty' },
+                { header: 'Harga Satuan', dataKey: 'price' },
+                { header: 'Total (Rp)', dataKey: 'total' }
+            ];
+
+            const rows = filteredData.map((item, index) => ({
+                no: index + 1,
+                date: formatDate(item.date),
+                name: item.name,
+                unit: item.unit,
+                qty: item.qty,
+                price: formatRupiah(item.price),
+                total: formatRupiah(item.total)
+            }));
+
+            doc.autoTable({
+                startY: 28,
+                columns: columns,
+                body: rows,
+                theme: 'grid',
+                headStyles: { fillColor: type==='pendapatan' ? [21, 128, 61] : [194, 65, 12] },
+                styles: { fontSize: 9 }
+            });
+
+            // Calculate and display sum in PDF footer
+            const totalSum = filteredData.reduce((sum, item) => sum + item.total, 0);
+            const finalY = doc.lastAutoTable.finalY || 28;
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(0);
+            doc.text(`Total Keseluruhan: ${formatRupiah(totalSum)}`, 14, finalY + 10);
+
+            doc.save(`${title.replace(/ /g, '_')}.pdf`);
+        };
+
+        window.exportRekapPDF = function(startDate, endDate) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            doc.setFontSize(18);
+            doc.text('Rekapitulasi Keuangan Kebun TKD', 14, 20);
+            
+            const filteredPendapatan = filterDataByDate(state.pendapatan, startDate, endDate);
+            const filteredPengeluaran = filterDataByDate(state.pengeluaran, startDate, endDate);
+
+            const totalPendapatan = filteredPendapatan.reduce((sum, item) => sum + item.total, 0);
+            const totalPengeluaran = filteredPengeluaran.reduce((sum, item) => sum + item.total, 0);
+            const saldoBersih = totalPendapatan - totalPengeluaran;
+
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            let periodText = 'Semua Waktu';
+            if (startDate && endDate) periodText = `${formatDate(startDate)} s/d ${formatDate(endDate)}`;
+            else if (startDate) periodText = `Sejak ${formatDate(startDate)}`;
+            else if (endDate) periodText = `Hingga ${formatDate(endDate)}`;
+            
+            doc.text(`Periode: ${periodText}`, 14, 27);
+            doc.setTextColor(0);
+
+            doc.setFontSize(12);
+            doc.text(`Total Pendapatan: ${formatRupiah(totalPendapatan)}`, 14, 40);
+            doc.text(`Total Pengeluaran: ${formatRupiah(totalPengeluaran)}`, 14, 50);
+            
+            doc.setFont(undefined, 'bold');
+            doc.text(`Saldo Bersih: ${formatRupiah(saldoBersih)} (${saldoBersih >= 0 ? 'Surplus' : 'Defisit'})`, 14, 60);
+            
+            // Add miniature tables
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(14);
+            doc.text('Rincian Singkat Pendapatan', 14, 75);
+            
+            doc.autoTable({
+                startY: 80,
+                head: [['Tanggal', 'Uraian', 'Total']],
+                body: filteredPendapatan.map(i => [formatDate(i.date), i.name, formatRupiah(i.total)]),
+                headStyles: { fillColor: [21, 128, 61] }
+            });
+
+            const finalY = doc.lastAutoTable.finalY || 80;
+            
+            doc.setFontSize(14);
+            doc.text('Rincian Singkat Pengeluaran', 14, finalY + 15);
+            
+            doc.autoTable({
+                startY: finalY + 20,
+                head: [['Tanggal', 'Uraian', 'Total']],
+                body: filteredPengeluaran.map(i => [formatDate(i.date), i.name, formatRupiah(i.total)]),
+                headStyles: { fillColor: [194, 65, 12] }
+            });
+
+            doc.save(`Rekapitulasi_Kebun_TKD.pdf`);
+        };
+
+        window.exportPekerjaPDF = function() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            doc.setFontSize(16);
+            doc.text('Daftar Pekerja Kebun TKD', 14, 15);
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text(`Dicetak pada: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+
+            const columns = [
+                { header: 'No', dataKey: 'no' },
+                { header: 'Nama Lengkap', dataKey: 'name' },
+                { header: 'Jabatan / Peran', dataKey: 'position' },
+                { header: 'Kisaran Upah', dataKey: 'wage' },
+                { header: 'Status', dataKey: 'status' }
+            ];
+
+            const rows = state.pekerja.map((item, index) => ({
+                no: index + 1,
+                name: item.name,
+                position: item.position,
+                wage: item.wage,
+                status: item.status
+            }));
+
+            doc.autoTable({
+                startY: 28,
+                columns: columns,
+                body: rows,
+                theme: 'grid',
+                headStyles: { fillColor: [37, 99, 235] }, // Blue tone for pekerja
+                styles: { fontSize: 10 }
+            });
+
+            doc.save(`Data_Pekerja_Kebun_TKD.pdf`);
+        };
+
+        // Initialize App
+        document.addEventListener('DOMContentLoaded', () => {
+            renderApp();
+        });
+
+    </script>
+</body>
+</html>
